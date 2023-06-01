@@ -32,9 +32,6 @@ g_is_render_hp = true
 g_is_render_control_mode = true
 g_is_render_compass = true
 
-g_rwr_elapsed = 0
-g_rwr_interval = 60
-
 g_notification = {
     notification_vehicle_control_mode = {
         text = "",
@@ -141,23 +138,82 @@ function begin()
     end
 end
 
-function find_enabled_radars(rwr_vehicle)
-
-end
+g_rwr = {
+    elapsed = 0,
+    interval = 80,
+    n_radars = 0,
+    radars = {},
+    near = 12,
+    far = 30,
+}
 
 function render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
-    g_rwr_elapsed = delta_time + g_rwr_elapsed
-    if g_rwr_elapsed < g_rwr_interval then
+    status, err = pcall(function()
+        _render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
+    end)
+    if not status then
+        print(string.format("error - %s", err))
+    end
+end
+
+function _render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
+    g_rwr.elapsed = delta_time + g_rwr.elapsed
+    local rwr_color = color8(0, 255, 0, 199)
+    local hostile_color = color8(255, 0, 0, 199)
+    local rwr_x = screen_w / 12
+    local rwr_y =  6 * (screen_h / 7)
+    local rwr_pos = vec2(rwr_x, rwr_y)
+    render_circle(rwr_pos, g_rwr.near + 4, 8, rwr_color)
+    render_circle(rwr_pos, g_rwr.far + 2, 12, rwr_color)
+    local heading = math.floor(360 * update_get_camera_heading() / math.pi / 2)
+    if heading < 0 then
+        heading = heading + 360
+    end
+
+    -- render what we have recorded
+    for _, radar_source in pairs(g_rwr.radars) do
+        local radar_color = rwr_color
+        if radar_source.hostile then
+            radar_color = hostile_color
+        end
+        local radar_bearing = radar_source.bearing - heading - 90
+        if radar_bearing < 0 then
+            radar_bearing = radar_bearing + 360
+        end
+
+        local radar_range = g_rwr.far
+        if radar_source.range < 2500 then
+            radar_range = g_rwr.near
+        end
+        local radar_kind = radar_source.kind
+        local bear_rads = math.rad(radar_bearing)
+        local plot = vec2(math.cos(bear_rads), math.sin(bear_rads))
+        update_ui_text(
+                plot:x() * radar_range + rwr_x,
+                plot:y() * radar_range + rwr_y,
+                radar_kind, 3, 1, radar_color, 0)
+
+        if radar_source.threat and radar_source.hostile then
+            update_ui_line(
+                    rwr_x,
+                    rwr_y,
+                    plot:y() * radar_range + rwr_y,
+                    screen_h / 2 + plot:y() * 100, rwr_color)
+        end
+    end
+
+    if g_rwr.elapsed < g_rwr.interval then
         return
     end
-    g_rwr_elapsed = 0
-    print("rwr scan")
+    print("-- sweep --")
+    g_rwr.elapsed = 0
+    g_rwr.radars = {}
 
     local origin = rwr_vehicle:get_position()
     local self_id = rwr_vehicle:get_id()
+    local our_team = rwr_vehicle:get_team_id()
 
     local function filter_radar_sources(v)
-
         if self_id == v:get_id() then
             return false
         end
@@ -179,6 +235,7 @@ function render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
                         local is_powered = true
                         local detection_range_sq = 81000000 -- 9km
                         local threat_range = -1
+                        local hostile = v:get_team_id() ~= our_team
 
                         if vdef == e_game_object_type.chassis_carrier then
                             radar_kind = "C"
@@ -186,7 +243,7 @@ function render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
                         elseif adef == e_game_object_type.attachment_radar_awacs then
                             radar_kind = "E2"
                             detection_range_sq = 121000000 -- 11km
-                        elseif e_game_object_type.attachment_radar_golfball then
+                        elseif adef == e_game_object_type.attachment_radar_golfball then
                             radar_kind = "S"
                             detection_range_sq = 36000000 -- 6km
                         elseif adef == e_game_object_type.attachment_turret_ciws then
@@ -200,7 +257,6 @@ function render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
                                 -- we can hear it
 
                                 local range = math.sqrt(dist_sq)
-                                print(string.format("distance %f %s power=%s", range, radar_kind, is_powered))
                                 err, msg = pcall(function()
                                     -- boo cant play sounds in hud mode
                                     local angle = (math.pi / 2) - math.atan(src_pos:x() - origin:x(), src_pos:z() - origin:z())
@@ -212,15 +268,21 @@ function render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
                                         bearing = bearing + 360
                                     end
 
-                                    local heading = math.floor(360 * update_get_camera_heading() / math.pi / 2)
-                                    if heading < 0 then
-                                        heading = heading + 360
-                                    end
-
-                                    print(string.format("bearing %d (%d)", bearing, bearing - heading))
+                                    local threat = false
+                                    print(string.format("%s r=%d b=%d", radar_kind, math.floor(range), math.floor(bearing - heading)))
                                     if range < threat_range then
-                                        print("threat!")
+                                        threat = true
                                     end
+                                    -- lua indexes start at 1 normally - odd language :D
+                                    g_rwr.radars[g_rwr.n_radars + 1] = {
+                                        threat = threat,
+                                        hostile = hostile,
+                                        bearing = bearing,
+                                        range = range,
+                                        kind = radar_kind,
+                                    }
+                                    g_rwr.n_radars = g_rwr.n_radars + 1
+
                                 end)
                                 if not err then
                                     print(string.format("error - %s", msg))
@@ -236,9 +298,8 @@ function render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
         return false
     end
 
-    local found_count = 0
     for _, src in iter_vehicles(filter_radar_sources) do
-        found_count = found_count + 1
+        g_rwr.n_radars = g_rwr.n_radars + 1
     end
 end
 
