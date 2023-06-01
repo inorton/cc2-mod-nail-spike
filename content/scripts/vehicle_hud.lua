@@ -197,8 +197,8 @@ function _render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
             update_ui_line(
                     rwr_x,
                     rwr_y,
-                    plot:y() * radar_range + rwr_y,
-                    screen_h / 2 + plot:y() * 100, rwr_color)
+                    plot:x() * radar_range + rwr_x,
+                    plot:y() * radar_range + rwr_y, hostile_color)
         end
     end
 
@@ -228,6 +228,7 @@ function _render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
                     if adef == e_game_object_type.attachment_radar_awacs
                             or adef == e_game_object_type.attachment_radar_golfball
                             or adef == e_game_object_type.attachment_turret_ciws
+                            or adef == e_game_object_type.attachment_turret_carrier_ciws
                     then
                         local src_pos = v:get_position()
                         local dist_sq = vec3_dist_sq(origin, src_pos)
@@ -246,7 +247,9 @@ function _render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
                         elseif adef == e_game_object_type.attachment_radar_golfball then
                             radar_kind = "S"
                             detection_range_sq = 36000000 -- 6km
-                        elseif adef == e_game_object_type.attachment_turret_ciws then
+                        elseif adef == e_game_object_type.attachment_turret_ciws
+                            or adef == e_game_object_type.attachment_turret_carrier_ciws
+                        then
                             radar_kind = "A"
                             detection_range_sq = 6250000 -- 2.5km
                             threat_range = 1000
