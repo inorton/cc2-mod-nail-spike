@@ -32,6 +32,9 @@ g_is_render_hp = true
 g_is_render_control_mode = true
 g_is_render_compass = true
 
+g_rwr_elapsed = 0
+g_rwr_interval = 60
+
 g_notification = {
     notification_vehicle_control_mode = {
         text = "",
@@ -138,6 +141,107 @@ function begin()
     end
 end
 
+function find_enabled_radars(rwr_vehicle)
+
+end
+
+function render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
+    g_rwr_elapsed = delta_time + g_rwr_elapsed
+    if g_rwr_elapsed < g_rwr_interval then
+        return
+    end
+    g_rwr_elapsed = 0
+    print("rwr scan")
+
+    local origin = rwr_vehicle:get_position()
+    local self_id = rwr_vehicle:get_id()
+
+    local function filter_radar_sources(v)
+
+        if self_id == v:get_id() then
+            return false
+        end
+
+        if not v:get_is_docked() then
+            local vdef = v:get_definition_index()
+            -- does it have a radar or CIWS
+            for i = 0, v:get_attachment_count() - 1 do
+                local attachment = v:get_attachment(i)
+                if attachment:get() then
+                    local adef = attachment:get_definition_index()
+                    if adef == e_game_object_type.attachment_radar_awacs
+                            or adef == e_game_object_type.attachment_radar_golfball
+                            or adef == e_game_object_type.attachment_turret_ciws
+                    then
+                        local src_pos = v:get_position()
+                        local dist_sq = vec3_dist_sq(origin, src_pos)
+                        local radar_kind = "?"
+                        local is_powered = true
+                        local detection_range_sq = 81000000 -- 9km
+                        local threat_range = -1
+
+                        if vdef == e_game_object_type.chassis_carrier then
+                            radar_kind = "C"
+                            is_powered = attachment:get_control_mode() ~= "off"
+                        elseif adef == e_game_object_type.attachment_radar_awacs then
+                            radar_kind = "E2"
+                            detection_range_sq = 121000000 -- 11km
+                        elseif e_game_object_type.attachment_radar_golfball then
+                            radar_kind = "S"
+                            detection_range_sq = 36000000 -- 6km
+                        elseif adef == e_game_object_type.attachment_turret_ciws then
+                            radar_kind = "A"
+                            detection_range_sq = 6250000 -- 2.5km
+                            threat_range = 1000
+                        end
+
+                        if is_powered then
+                            if dist_sq < detection_range_sq then
+                                -- we can hear it
+
+                                local range = math.sqrt(dist_sq)
+                                print(string.format("distance %f %s power=%s", range, radar_kind, is_powered))
+                                err, msg = pcall(function()
+                                    -- boo cant play sounds in hud mode
+                                    local angle = (math.pi / 2) - math.atan(src_pos:x() - origin:x(), src_pos:z() - origin:z())
+                                    if angle < 0 then
+                                        angle = angle + math.pi * 2
+                                    end
+                                    local bearing = (90 - math.floor(math.deg(angle)) % 360)
+                                    if bearing < 0 then
+                                        bearing = bearing + 360
+                                    end
+
+                                    local heading = math.floor(360 * update_get_camera_heading() / math.pi / 2)
+                                    if heading < 0 then
+                                        heading = heading + 360
+                                    end
+
+                                    print(string.format("bearing %d (%d)", bearing, bearing - heading))
+                                    if range < threat_range then
+                                        print("threat!")
+                                    end
+                                end)
+                                if not err then
+                                    print(string.format("error - %s", msg))
+                                end
+
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return false
+    end
+
+    local found_count = 0
+    for _, src in iter_vehicles(filter_radar_sources) do
+        found_count = found_count + 1
+    end
+end
+
 
 --------------------------------------------------------------------------------
 --
@@ -238,6 +342,7 @@ function update(screen_w, screen_h, tick_fraction, delta_time, local_peer_id, ve
                 or def == e_game_object_type.chassis_air_rotor_heavy 
                 then
                     render_flight_hud(screen_w, screen_h, is_render_center == false, vehicle)
+                    render_radar_warning(screen_w, screen_h, vehicle, tick_fraction)
                 end
 
                 if def == e_game_object_type.chassis_land_wheel_light
