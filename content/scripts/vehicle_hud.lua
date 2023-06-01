@@ -157,12 +157,17 @@ function render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
 end
 
 function _render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
+    if not g_is_render_hp then
+        return
+    end
+
     g_rwr.elapsed = delta_time + g_rwr.elapsed
     local rwr_color = color8(0, 255, 0, 199)
     local hostile_color = color8(255, 0, 0, 199)
     local rwr_x = screen_w / 12
     local rwr_y =  6 * (screen_h / 7)
     local rwr_pos = vec2(rwr_x, rwr_y)
+
     render_circle(rwr_pos, g_rwr.near + 4, 8, rwr_color)
     render_circle(rwr_pos, g_rwr.far + 2, 12, rwr_color)
     local heading = math.floor(360 * update_get_camera_heading() / math.pi / 2)
