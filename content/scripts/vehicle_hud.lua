@@ -262,11 +262,10 @@ function _render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
 
                         if is_powered then
                             if dist_sq < detection_range_sq then
-                                -- we can hear it
+                                -- we can hear a radar
 
                                 local range = math.sqrt(dist_sq)
                                 err, msg = pcall(function()
-                                    -- boo cant play sounds in hud mode
                                     local angle = (math.pi / 2) - math.atan(src_pos:x() - origin:x(), src_pos:z() - origin:z())
                                     if angle < 0 then
                                         angle = angle + math.pi * 2
@@ -280,6 +279,9 @@ function _render_radar_warning(screen_w, screen_h, rwr_vehicle, delta_time)
                                     print(string.format("%s r=%d b=%d", radar_kind, math.floor(range), math.floor(bearing - heading)))
                                     if range < threat_range then
                                         threat = true
+                                        -- boo cant play sounds in hud mode
+                                        --update_play_sound(7)
+                                        --update_play_sound(7)
                                     end
                                     -- lua indexes start at 1 normally - odd language :D
                                     g_rwr.radars[g_rwr.n_radars + 1] = {
